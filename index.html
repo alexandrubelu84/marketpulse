@@ -14,58 +14,7 @@
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useCallback } = React;
 
-function LoginScreen({ onLogin }) {
-  const [key, setKey] = React.useState("");
-  const [error, setError] = React.useState("");
 
-  function handleSubmit() {
-    const k = key.trim();
-    if (!k.startsWith("sk-ant-")) {
-      setError("Cheia trebuie sa inceapa cu sk-ant-");
-      return;
-    }
-    localStorage.setItem("mp_api_key", k);
-    onLogin(k);
-  }
-
-  return (
-    <div style={{ background:"#080810", minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
-      <div style={{ background:"#0e0e18", border:"1px solid #2a2a3a", borderRadius:16, padding:"40px 48px", maxWidth:440, width:"100%", boxShadow:"0 32px 80px rgba(0,0,0,0.6)" }}>
-        <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:28, color:"#e8e8f0", marginBottom:6 }}>
-          Market<span style={{ color:"#e8c547" }}>Pulse</span>
-        </div>
-        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:"#9898b8", marginBottom:32, letterSpacing:1 }}>
-          NEWSFEED ECONOMIC · LIVE
-        </div>
-        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:"#9898b8", marginBottom:8 }}>
-          ANTHROPIC API KEY
-        </div>
-        <input
-          type="password"
-          value={key}
-          onChange={e => setKey(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && handleSubmit()}
-          placeholder="sk-ant-..."
-          style={{ width:"100%", background:"#111120", border:"1px solid #2a2a3a", borderRadius:8,
-            padding:"12px 16px", color:"#e8e8f0", fontFamily:"'JetBrains Mono',monospace",
-            fontSize:13, outline:"none", marginBottom:8, boxSizing:"border-box" }}
-        />
-        {error && <div style={{ color:"#ff5757", fontFamily:"'JetBrains Mono',monospace", fontSize:11, marginBottom:8 }}>{error}</div>}
-        <button onClick={handleSubmit}
-          style={{ width:"100%", background:"#e8c547", color:"#0a0a0f", border:"none",
-            borderRadius:8, padding:"12px", fontFamily:"'JetBrains Mono',monospace",
-            fontSize:13, fontWeight:700, cursor:"pointer", marginTop:8 }}>
-          INTRĂ ▶
-        </button>
-        <div style={{ marginTop:20, fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#44446a", lineHeight:1.6 }}>
-          Cheia ta este salvată local în browser și nu este trimisă nimănui.<br/>
-          O găsești la console.anthropic.com → API Keys
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const REFRESH_SEC = 180;
 
@@ -142,13 +91,7 @@ async function fetchCategory(cat) {
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
-function AppWrapper() {
-  const saved = localStorage.getItem("mp_api_key");
-  const [apiKey, setApiKey] = React.useState(saved || "");
 
-  if (!apiKey) return React.createElement(LoginScreen, { onLogin: setApiKey });
-  return React.createElement(App);
-}
 
 function App() {
   const [prices, setPrices] = useState(PRICES_FALLBACK);
@@ -465,12 +408,7 @@ function App() {
                 boxShadow:"0 0 7px #4cf0a0", animation:"pulse 2s infinite" }}/>
               {clock}
             </div>
-            <button onClick={function() { localStorage.removeItem("mp_api_key"); window.location.reload(); }}
-              style={{ background:"transparent", border:"1px solid #2a2a3a", borderRadius:6,
-                color:"#5a5a7a", cursor:"pointer", padding:"4px 10px",
-                fontFamily:"'JetBrains Mono',monospace", fontSize:10 }}>
-              logout
-            </button>
+
           </div>
         </div>
 
@@ -633,7 +571,7 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AppWrapper));
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
 </body>
 </html>
