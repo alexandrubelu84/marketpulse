@@ -1,3 +1,8 @@
+// Vercel function config - extend timeout to 60 seconds
+export const config = {
+  maxDuration: 60,
+};
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -54,11 +59,10 @@ Return 4-5 articles, newest first. Only real articles from last 48 hours from qu
       .join("")
       .trim();
 
-    // Parse JSON array from response
     const a1 = raw.indexOf("[");
     const a2 = raw.lastIndexOf("]");
     if (a1 === -1 || a2 <= a1) {
-      return res.status(500).json({ error: "Invalid response format" });
+      return res.status(500).json({ error: "Invalid response format", raw: raw.slice(0, 200) });
     }
 
     let arr;
