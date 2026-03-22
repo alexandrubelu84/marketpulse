@@ -29,14 +29,8 @@ const PRICES_FALLBACK = [
 ];
 
 const CATEGORIES = [
-  { id: "geo",    icon: "🎯", label: "Geopolitică",    color: "#ff4444", bg: "rgba(255,68,68,0.10)",  border: "rgba(255,68,68,0.25)",
-    prompt: "Latest news today: military strikes on oil fields gas pipelines energy infrastructure, Middle East conflict impact on energy, sanctions on Russia Iran oil gas, attacks on tankers refineries. Last 3 days only." },
-  { id: "energy", icon: "🔥", label: "Gaz & Energie", color: "#ff8c00", bg: "rgba(255,140,0,0.12)",  border: "rgba(255,140,0,0.25)",
-    prompt: "Latest news today: European natural gas prices, TTF gas, LNG imports Europe, energy markets. Last 3 days only." },
-  { id: "oil",    icon: "🛢️", label: "Petrol & OPEC",  color: "#e05cff", bg: "rgba(224,92,255,0.10)", border: "rgba(224,92,255,0.22)",
-    prompt: "Latest news today: crude oil prices, OPEC decisions, Brent WTI oil markets. Last 3 days only." },
-  { id: "macro",  icon: "📈", label: "Macro & BCE",    color: "#4c9fff", bg: "rgba(76,159,255,0.10)", border: "rgba(76,159,255,0.22)",
-    prompt: "Latest news today: ECB interest rates, eurozone inflation, European economy GDP. Last 3 days only." },
+  { id: "energy", icon: "⚡", label: "Energie & Petrol", color: "#ff8c00", bg: "rgba(255,140,0,0.12)", border: "rgba(255,140,0,0.25)" },
+  { id: "geo",    icon: "🌍", label: "Geopolitică & Macro", color: "#4c9fff", bg: "rgba(76,159,255,0.10)", border: "rgba(76,159,255,0.22)" },
 ];
 
 const IMPACT_COLORS = {
@@ -74,10 +68,8 @@ async function fetchCategory(cat) {
   const today = new Date().toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
 
   const prompts = {
-    geo:    "Search for 5 recent news articles (last 48h) about: military strikes on oil/gas, Iran war energy impact, Russia Ukraine energy sanctions, Middle East oil supply.",
-    energy: "Search for 5 recent news articles (last 48h) about: European natural gas prices, TTF gas, LNG imports Europe, energy prices.",
-    oil:    "Search for 5 recent news articles (last 48h) about: crude oil prices, OPEC, Brent WTI oil market.",
-    macro:  "Search for 5 recent news articles (last 48h) about: ECB interest rates, eurozone inflation, European economy.",
+    energy: "Find 4 news articles from today or yesterday about: natural gas prices Europe TTF LNG, crude oil OPEC Brent WTI prices. Real articles only, last 24 hours.",
+    geo:    "Find 4 news articles from today or yesterday about: Iran war energy sanctions Russia Ukraine Middle East oil gas, ECB eurozone inflation economy. Real articles only, last 24 hours.",
   };
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
