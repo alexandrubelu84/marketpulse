@@ -13,89 +13,56 @@ export default async function handler(req, res) {
     macro:  "ECB eurozone inflation interest rates economy",
   };
 
-  // 29 trusted sources — no garbage
+  // 29 trusted sources - both sky.com variants included
   const domains = [
-    // Breaking & general
-    "apnews.com",
-    "reuters.com",
-    "bbc.co.uk",
-    "news.sky.com",
-    "theguardian.com",
-    "axios.com",
-    // USA financial
-    "cnbc.com",
-    "marketwatch.com",
-    "seekingalpha.com",
-    "economist.com",
-    // Energy specialized
-    "oilprice.com",
-    "ogj.com",
-    "rigzone.com",
-    "naturalgasworld.com",
-    "worldoil.com",
-    "lngprime.com",
-    "argusmedia.com",
-    "icis.com",
-    "energyintel.com",
-    // Europe media
-    "euronews.com",
-    "france24.com",
-    "dw.com",
-    "politico.eu",
-    "afp.com",
-    "middleeasteye.net",
-    // Official institutions
-    "iea.org",
-    "spglobal.com",
-    "consilium.europa.eu",
-    "ec.europa.eu",
+    "apnews.com", "reuters.com", "bbc.co.uk", "bbc.com",
+    "news.sky.com", "sky.com", "theguardian.com", "axios.com",
+    "cnbc.com", "marketwatch.com", "seekingalpha.com", "economist.com",
+    "oilprice.com", "ogj.com", "rigzone.com", "naturalgasworld.com",
+    "worldoil.com", "lngprime.com", "argusmedia.com", "icis.com",
+    "euronews.com", "france24.com", "dw.com", "politico.eu",
+    "afp.com", "iea.org", "spglobal.com",
+    "consilium.europa.eu", "ec.europa.eu",
+  ].join(",");
+
+  // Strict blacklist for last resort
+  const blacklist = [
+    "rt.com", "sputniknews.com", "tass.com", "theduran.com",
+    "zerohedge.com", "infowars.com", "breitbart.com", "naturalnews.com",
+    "globalresearch.ca", "steynonline.com", "zeenews.india.com",
+    "ndtv.com", "hindustantimes.com", "vox.com", "dailymail.co.uk",
+    "kingworldnews.com", "jamaica-gleaner.com", "investing.com",
+    "activistpost.com", "newsmax.com", "oann.com", "theblaze.com",
   ].join(",");
 
   const q = searches[category] || searches.energy;
 
   try {
-    // First: trusted domains, last 3 days
-    const url1 = `https://api.thenewsapi.com/v1/news/all` +
-      `?api_token=${API_KEY}` +
-      `&search=${encodeURIComponent(q)}` +
-      `&language=en&limit=6&sort=published_at` +
-      `&published_after=${getDateDaysAgo(3)}` +
-      `&domains=${encodeURIComponent(domains)}`;
-
-    const r1 = await fetch(url1);
+    // Tier 1: trusted domains, last 3 days
+    const r1 = await fetch(
+      `https://api.thenewsapi.com/v1/news/all?api_token=${API_KEY}` +
+      `&search=${encodeURIComponent(q)}&language=en&limit=6&sort=published_at` +
+      `&published_after=${daysAgo(3)}&domains=${encodeURIComponent(domains)}`
+    );
     const d1 = await r1.json();
+    if (d1.data && d1.data.length >= 3) return res.status(200).json(d1);
 
-    if (d1.data && d1.data.length >= 2) {
-      return res.status(200).json(d1);
-    }
-
-    // Fallback: same domains, last 7 days
-    const url2 = `https://api.thenewsapi.com/v1/news/all` +
-      `?api_token=${API_KEY}` +
-      `&search=${encodeURIComponent(q)}` +
-      `&language=en&limit=6&sort=published_at` +
-      `&published_after=${getDateDaysAgo(7)}` +
-      `&domains=${encodeURIComponent(domains)}`;
-
-    const r2 = await fetch(url2);
+    // Tier 2: trusted domains, last 7 days
+    const r2 = await fetch(
+      `https://api.thenewsapi.com/v1/news/all?api_token=${API_KEY}` +
+      `&search=${encodeURIComponent(q)}&language=en&limit=6&sort=published_at` +
+      `&published_after=${daysAgo(7)}&domains=${encodeURIComponent(domains)}`
+    );
     const d2 = await r2.json();
+    if (d2.data && d2.data.length >= 2) return res.status(200).json(d2);
 
-    if (d2.data && d2.data.length >= 2) {
-      return res.status(200).json(d2);
-    }
-
-    // Last resort: no domain filter, just language + category + date
-    const url3 = `https://api.thenewsapi.com/v1/news/all` +
-      `?api_token=${API_KEY}` +
-      `&search=${encodeURIComponent(q)}` +
-      `&language=en&limit=6&sort=published_at` +
-      `&categories=business,politics,general` +
-      `&published_after=${getDateDaysAgo(5)}` +
-      `&exclude_domains=rt.com,sputniknews.com,tass.com,theduran.com,zerohedge.com,` +
-      `infowars.com,breitbart.com,naturalnews.com,globalresearch.ca,steynonline.com,` +
-      `zeenews.india.com,ndtv.com,hindustantimes.com,vox.com,dailymail.co.uk`;
-
-    const r3 = await fetch(url3);
+    // Tier 3: no domain filter, exclude blacklist, business/politics only
+    const r3 = await fetch(
+      `https://api.thenewsapi.com/v1/news/all?api_token=${API_KEY}` +
+      `&search=${encodeURIComponent(q)}&language=en&limit=6&sort=published_at` +
+      `&categories=business,politics&published_after=${daysAgo(5)}` +
+      `&exclude_domains=${encodeURIComponent(blacklist)}`
+    );
     const d3 = await r3.json();
     return res.status(200).json(d3);
 
@@ -104,8 +71,8 @@ export default async function handler(req, res) {
   }
 }
 
-function getDateDaysAgo(days) {
+function daysAgo(n) {
   const d = new Date();
-  d.setDate(d.getDate() - days);
+  d.setDate(d.getDate() - n);
   return d.toISOString().split("T")[0];
 }
