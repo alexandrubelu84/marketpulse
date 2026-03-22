@@ -162,28 +162,15 @@ function App() {
   }, []);
 
   // load all categories in parallel
-  // ── fetch live prices via Claude web search (once per hour) ─────────────
+  // ── fetch prices from Vercel API ─────────────────────────────────────────
   const fetchLivePrices = useCallback(async function() {
     setPricesLoading(true);
     try {
-      const today = new Date().toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "anthropic-dangerous-direct-browser-access": "true", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 400,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          system: "You are a price data API. Search and return ONLY a JSON array, no text, no markdown. up=true if change positive. Format: [{\"label\":\"WTI\",\"value\":\"XX.XX\",\"unit\":\"USD/bbl\",\"change\":\"+X.XX%\",\"up\":true}]",
-          messages: [{ role: "user", content: "Search for current prices today " + today + ": WTI crude oil, Brent crude, TTF natural gas Europe EUR/MWh, German natural gas EUR/MWh, Carbon ETS EUR/t. Return JSON array with 5 items." }],
-        }),
-      });
+      const res = await fetch("/api/prices");
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
-      const raw = (data.content || []).filter(function(b) { return b.type === "text"; }).map(function(b) { return b.text; }).join("").trim();
-      const parsed = safeParseJSON(raw);
-      if (parsed && Array.isArray(parsed) && parsed.length >= 3) {
-        setPrices(parsed);
+      if (data.prices && data.prices.length >= 3) {
+        setPrices(data.prices);
         setPricesAge(Date.now());
       }
     } catch(e) {
