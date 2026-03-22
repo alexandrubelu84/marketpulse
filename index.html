@@ -76,7 +76,7 @@ async function fetchCategory(cat) {
   if (articles.length === 0) throw new Error("No articles found");
   return articles.map(function(a) {
     const d = new Date(a.published_at || Date.now());
-    const datetime = d.toLocaleDateString("en-GB", { day:"numeric", month:"short" }) + " " + d.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+    const datetime = d.toLocaleDateString("ro-RO", { day:"numeric", month:"short", timeZone:"Europe/Bucharest" }) + " " + d.toLocaleTimeString("ro-RO", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Bucharest" });
     return {
       categoryId: cat.id,
       title: a.title || "",
