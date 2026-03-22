@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     "flassbeck-economics.com","kingworldnews.com","argaam.com","fastcompany.com",
     "newser.com","suburbanfinance.com","seekingalpha.com","middleeastmonitor.com",
     // Other
-    "dailymail.co.uk","nypost.com","vox.com","washingtontimes.com","gatestoneinstitute.org","dissidentvoice.org","etftrends.com","global-macro-monitor.com","newser.com","suburbanfinance.com","theweek.com","spectator.co.uk","thenation.com","jacobin.com","moonofalabama.org","nakedcapitalism.com","wolfstreet.com","zerohedge.com","marketoracle.co.uk","oilprice.com",
+    "dailymail.co.uk","nypost.com","vox.com","washingtontimes.com","gatestoneinstitute.org","dissidentvoice.org","etftrends.com","news.ycombinator.com","app.buzzsumo.com","opednews.com","abc.net.au","businessinsider.com","rte.ie","theweek.com","global-macro-monitor.com","newser.com","suburbanfinance.com","theweek.com","spectator.co.uk","thenation.com","jacobin.com","moonofalabama.org","nakedcapitalism.com","wolfstreet.com","zerohedge.com","marketoracle.co.uk","oilprice.com",
   ].join(",");
 
   const q = searches[category] || searches.energy;
@@ -70,10 +70,11 @@ export default async function handler(req, res) {
     const d2 = await r2.json();
     if (d2.data && d2.data.length >= 2) return res.status(200).json(d2);
 
-    // Tier 3: last 7 days, no filters except blacklist
+    // Tier 3: last 7 days, business/politics only — no open-ended search
     const r3 = await fetch(
       `https://api.thenewsapi.com/v1/news/all?api_token=${API_KEY}` +
       `&search=${encodeURIComponent(q)}&language=en&limit=6&sort=published_at` +
+      `&categories=business,politics` +
       `&published_after=${daysAgo(7)}` +
       `&exclude_domains=${encodeURIComponent(blacklist)}`
     );
