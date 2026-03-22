@@ -2,72 +2,81 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // Yahoo Finance symbols
-  const symbols = {
-    "WTI":        "CL=F",
-    "Brent":      "BZ=F",
-    "TTF Gas":    "TTF=F",
-    "German Gas": "TTFDE=F",
-    "Carbon ETS": "EUGASEN.CO",
-  };
-
-  const units = {
-    "WTI":        "USD/bbl",
-    "Brent":      "USD/bbl",
-    "TTF Gas":    "EUR/MWh",
-    "German Gas": "EUR/MWh",
-    "Carbon ETS": "EUR/t",
-  };
-
-  // Fallback values if Yahoo Finance fails
-  const fallback = [
-    { label: "WTI",        value: "—", unit: "USD/bbl", change: "—", up: null },
-    { label: "Brent",      value: "—", unit: "USD/bbl", change: "—", up: null },
-    { label: "TTF Gas",    value: "—", unit: "EUR/MWh", change: "—", up: null },
-    { label: "German Gas", value: "—", unit: "EUR/MWh", change: "—", up: null },
-    { label: "Carbon ETS", value: "—", unit: "EUR/t",   change: "—", up: null },
+  const instruments = [
+    { label: "WTI",        symbol: "CL=F",    unit: "USD/bbl" },
+    { label: "Brent",      symbol: "BZ=F",    unit: "USD/bbl" },
+    { label: "TTF Gas",    symbol: "TTF=F",   unit: "EUR/MWh" },
+    { label: "German Gas", symbol: "EGSGASDE=X", unit: "EUR/MWh" },
+    { label: "Carbon ETS", symbol: "EUAD=F",  unit: "EUR/t"   },
   ];
 
-  try {
-    const tickers = Object.values(symbols).join(",");
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers)}&fields=regularMarketPrice,regularMarketChangePercent&corsDomain=finance.yahoo.com`;
+  const fallback = instruments.map(i => ({
+    label: i.label, value: "—", unit: i.unit, change: "—", up: null
+  }));
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-      }
+  try {
+    const tickers = instruments.map(i => i.symbol).join(",");
+    const url = `https://query1.finance.yahoo.com/v8/finance/spark?symbols=${encodeURIComponent(tickers)}&range=1d&interval=5m`;
+
+    // Try v8 spark endpoint first  
+    const r1 = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" }
     });
 
-    if (!response.ok) throw new Error("Yahoo Finance HTTP " + response.status);
+    // Try v7 quote endpoint
+    const url2 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers)}`;
+    const r2 = await fetch(url2, {
+      headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" }
+    });
 
-    const data = await response.json();
+    if (!r2.ok) throw new Error("Yahoo v7 failed: " + r2.status);
+
+    const data = await r2.json();
     const quotes = data?.quoteResponse?.result || [];
+    if (quotes.length === 0) throw new Error("No quotes");
 
-    if (quotes.length === 0) throw new Error("No quotes returned");
-
-    const prices = Object.entries(symbols).map(function([label, ticker]) {
-      const quote = quotes.find(function(q) { return q.symbol === ticker; });
-      if (!quote) return fallback.find(function(f) { return f.label === label; });
-
-      const price = quote.regularMarketPrice;
-      const changePct = quote.regularMarketChangePercent;
-      const up = changePct >= 0;
-      const changeStr = (up ? "+" : "") + changePct.toFixed(2) + "%";
-
+    const prices = instruments.map(inst => {
+      const q = quotes.find(x => x.symbol === inst.symbol);
+      if (!q || !q.regularMarketPrice) return { label: inst.label, value: "—", unit: inst.unit, change: "—", up: null };
+      const pct = q.regularMarketChangePercent || 0;
       return {
-        label,
-        value: price.toFixed(2),
-        unit: units[label],
-        change: changeStr,
-        up,
+        label: inst.label,
+        value: q.regularMarketPrice.toFixed(2),
+        unit: inst.unit,
+        change: (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%",
+        up: pct >= 0,
       };
     });
 
-    return res.status(200).json({ prices, source: "yahoo", updated: new Date().toISOString() });
+    return res.status(200).json({ prices, source: "yahoo" });
 
-  } catch (e) {
-    console.warn("Yahoo Finance failed:", e.message, "— using fallback");
+  } catch(e) {
+    // Try alternative Yahoo endpoint
+    try {
+      const tickers = instruments.map(i => i.symbol).join("%2C");
+      const url3 = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${tickers}`;
+      const r3 = await fetch(url3, {
+        headers: { "User-Agent": "Mozilla/5.0", "Accept": "*/*" }
+      });
+      const d3 = await r3.json();
+      const quotes = d3?.quoteResponse?.result || [];
+      if (quotes.length > 0) {
+        const prices = instruments.map(inst => {
+          const q = quotes.find(x => x.symbol === inst.symbol);
+          if (!q || !q.regularMarketPrice) return { label: inst.label, value: "—", unit: inst.unit, change: "—", up: null };
+          const pct = q.regularMarketChangePercent || 0;
+          return {
+            label: inst.label,
+            value: q.regularMarketPrice.toFixed(2),
+            unit: inst.unit,
+            change: (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%",
+            up: pct >= 0,
+          };
+        });
+        return res.status(200).json({ prices, source: "yahoo2" });
+      }
+    } catch(e2) {}
+
     return res.status(200).json({ prices: fallback, source: "fallback", error: e.message });
   }
 }
