@@ -29,8 +29,8 @@ const PRICES_FALLBACK = [
 ];
 
 const CATEGORIES = [
-  { id: "energy", icon: "⚡", label: "Energie & Petrol", color: "#ff8c00", bg: "rgba(255,140,0,0.12)", border: "rgba(255,140,0,0.25)" },
-  { id: "geo",    icon: "🌍", label: "Geopolitică & Macro", color: "#4c9fff", bg: "rgba(76,159,255,0.10)", border: "rgba(76,159,255,0.22)" },
+  { id: "geo",    icon: "🌍", label: "Geopolitică & Macro", color: "#ff4444", bg: "rgba(255,68,68,0.10)",  border: "rgba(255,68,68,0.25)" },
+  { id: "energy", icon: "⚡", label: "Energie & Petrol",    color: "#ff8c00", bg: "rgba(255,140,0,0.12)",  border: "rgba(255,140,0,0.25)" },
 ];
 
 const IMPACT_COLORS = {
@@ -60,63 +60,25 @@ function safeParseJSON(raw) {
   return null;
 }
 
-// ── Single category fetch via Claude web search (direct from browser) ────────
+// ── Single category fetch via TheNewsAPI ─────────────────────────────────
 async function fetchCategory(cat) {
-  const ANTHROPIC_KEY = localStorage.getItem("mp_anthropic_key") || "";
-  if (!ANTHROPIC_KEY) throw new Error("No Anthropic API key");
-
-  const today = new Date().toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
-  const yd = new Date(); yd.setDate(yd.getDate()-1);
-  const yesterday = yd.toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
-
-  const prompts = {
-    energy: `Search the web RIGHT NOW for news published on ${today} or ${yesterday} about: natural gas TTF LNG Europe prices, crude oil OPEC Brent WTI. Return only articles with dates from ${today} or ${yesterday}. No older articles.`,
-    geo:    `Search the web RIGHT NOW for news published on ${today} or ${yesterday} about: Iran war energy Middle East oil gas sanctions Russia Ukraine, ECB eurozone inflation. Return only articles with dates from ${today} or ${yesterday}. No older articles.`,
-  };
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1500,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
-      system: `Today is ${today}. Search web for news from last 24 hours only. Return ONLY a JSON array starting with [. Format: [{"title":"...","summary":"...","source":"Reuters","datetime":"22 Mar 14:30","impact":"high","url":"https://...","body":"2 sentences."}]. Max 4 articles. Sources: Reuters, AP, BBC, CNBC, Guardian only.`,
-      messages: [{ role:"user", content: prompts[cat.id] || prompts.energy }],
-    }),
-  });
-
-  if (!res.ok) {
-    const e = await res.json();
-    throw new Error(e.error?.message || "HTTP " + res.status);
-  }
-
+  const res = await fetch("/api/news?category=" + cat.id);
+  if (!res.ok) throw new Error("HTTP " + res.status);
   const data = await res.json();
-  const raw = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
-  const a1 = raw.indexOf("[");
-  const a2 = raw.lastIndexOf("]");
-  if (a1 === -1 || a2 <= a1) throw new Error("No articles found");
-
-  let arr;
-  try { arr = JSON.parse(raw.slice(a1, a2 + 1)); }
-  catch { arr = JSON.parse(raw.slice(a1, a2 + 1).replace(/,(\s*[\]}])/g, "$1")); }
-
-  if (!arr || arr.length === 0) throw new Error("No articles found");
-
-  return arr.map(function(a) {
+  if (data.error) throw new Error(data.error);
+  const articles = (data.data || []);
+  if (articles.length === 0) throw new Error("No articles found");
+  return articles.map(function(a) {
+    const d = new Date(a.published_at || Date.now());
+    const datetime = d.toLocaleDateString("ro-RO", { day:"numeric", month:"short", timeZone:"Europe/Bucharest" }) + " " + d.toLocaleTimeString("ro-RO", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Bucharest" });
     return {
       categoryId: cat.id,
       title: a.title || "",
-      summary: a.summary || "",
+      summary: a.description || a.snippet || "",
       source: a.source || "",
-      datetime: a.datetime || "",
-      body: a.body || a.summary || "",
-      impact: a.impact || guessImpact(a.title),
+      datetime: datetime,
+      body: a.snippet || a.description || "",
+      impact: guessImpact(a.title),
       link: a.url || null,
     };
   });
@@ -222,9 +184,7 @@ function App() {
   async function loadAll(silent) {
     for (let i = 0; i < CATEGORIES.length; i++) {
       await loadCat(CATEGORIES[i], silent);
-      if (i < CATEGORIES.length - 1) {
-        await new Promise(function(r) { setTimeout(r, 65000); });
-      }
+
     }
     if (silent) showToast("\u2713 News updated");
   }
@@ -593,51 +553,7 @@ function App() {
   );
 }
 
-
-function Root() {
-  const [key, setKey] = React.useState(localStorage.getItem("mp_anthropic_key") || "");
-  const [input, setInput] = React.useState("");
-
-  if (key) return React.createElement(App);
-
-  return React.createElement("div", {
-    style: { minHeight:"100vh", background:"#0a0a12", display:"flex", alignItems:"center", justifyContent:"center" }
-  },
-    React.createElement("div", {
-      style: { background:"#12121e", border:"1px solid #2a2a3a", borderRadius:12, padding:40, width:400, textAlign:"center" }
-    },
-      React.createElement("div", { style: { fontSize:28, fontWeight:700, marginBottom:4 } },
-        React.createElement("span", { style: { color:"#fff" } }, "Market"),
-        React.createElement("span", { style: { color:"#f5c842" } }, "Pulse")
-      ),
-      React.createElement("div", { style: { color:"#5a5a7a", fontSize:11, letterSpacing:3, marginBottom:32 } }, "NEWSFEED ECONOMIC · LIVE"),
-      React.createElement("div", { style: { color:"#8a8aaa", fontSize:12, marginBottom:8, textAlign:"left" } }, "ANTHROPIC API KEY"),
-      React.createElement("input", {
-        type:"password",
-        placeholder:"sk-ant-...",
-        value: input,
-        onChange: function(e) { setInput(e.target.value); },
-        style: { width:"100%", background:"#1a1a2e", border:"1px solid #2a2a3a", borderRadius:6, padding:"10px 12px", color:"#fff", fontSize:13, marginBottom:16, boxSizing:"border-box" }
-      }),
-      React.createElement("button", {
-        onClick: function() {
-          if (input.startsWith("sk-ant-")) {
-            localStorage.setItem("mp_anthropic_key", input);
-            setKey(input);
-          }
-        },
-        style: { width:"100%", background:"#f5c842", color:"#0a0a12", border:"none", borderRadius:6, padding:"12px", fontWeight:700, cursor:"pointer", fontSize:13, letterSpacing:2 }
-      }, "INTRĂ ▶"),
-      React.createElement("div", { style: { color:"#3a3a5a", fontSize:10, marginTop:16 } },
-        "Cheia e salvată local în browser și nu este trimisă nicăieri.",
-        React.createElement("br"),
-        React.createElement("a", { href:"https://console.anthropic.com", target:"_blank", style: { color:"#5a5a7a" } }, "Obține cheia la console.anthropic.com → API Keys")
-      )
-    )
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Root));
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   </script>
 </body>
 </html>
