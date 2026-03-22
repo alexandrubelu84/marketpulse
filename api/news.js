@@ -4,78 +4,74 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const { category } = req.query;
-  const API_KEY = process.env.NEWS_API_KEY;
+  const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
-  const searches = {
-    geo:    "(war OR attack OR sanction OR strike) AND (oil OR gas OR energy OR Iran OR Russia OR Ukraine)",
-    energy: "(gas OR LNG OR TTF OR energy OR electricity) AND (Europe OR European OR price OR market)",
-    oil:    "(oil OR crude OR OPEC OR Brent OR WTI) AND (price OR barrel OR production OR market)",
-    macro:  "(ECB OR eurozone OR inflation OR economy) AND (Europe OR European OR rate OR GDP)",
+  if (!ANTHROPIC_KEY) {
+    return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
+  }
+
+  const today = new Date().toLocaleDateString("en-GB", {
+    day: "numeric", month: "long", year: "numeric"
+  });
+
+  const prompts = {
+    geo:    "Search for the 5 most recent news articles (last 48 hours) about: military strikes on oil/gas infrastructure, Iran war impact on energy, Russia Ukraine energy sanctions, Middle East conflict and oil supply.",
+    energy: "Search for the 5 most recent news articles (last 48 hours) about: European natural gas prices, TTF gas market, LNG imports to Europe, energy prices Europe.",
+    oil:    "Search for the 5 most recent news articles (last 48 hours) about: crude oil prices, OPEC decisions, Brent WTI oil market.",
+    macro:  "Search for the 5 most recent news articles (last 48 hours) about: ECB interest rates, eurozone inflation, European economy GDP.",
   };
 
-  // Absolute blacklist — never show these
-  const blacklist = [
-    "rt.com","sputniknews.com","tass.com","theduran.com","zerohedge.com",
-    "infowars.com","breitbart.com","naturalnews.com","globalresearch.ca",
-    "steynonline.com","zeenews.india.com","ndtv.com","hindustantimes.com",
-    "economictimes.indiatimes.com","timesofindia.com","dailymail.co.uk",
-    "nypost.com","vox.com","kingworldnews.com","jamaica-gleaner.com",
-    "fastcompany.com","thestockmarketwatch.com","flassbeck-economics.com",
-    "argaam.com","activistpost.com","newsmax.com","oann.com",
-    "fortune.com","investing.com","finance.yahoo.com",
-  ].join(",");
-
-  const q = searches[category] || searches.energy;
+  const prompt = prompts[category] || prompts.energy;
 
   try {
-    // Tier 1: categories filter + last 2 days
-    const r1 = await fetch(
-      `https://api.thenewsapi.com/v1/news/all?api_token=${API_KEY}` +
-      `&search=${encodeURIComponent(q)}` +
-      `&language=en&limit=6&sort=published_at` +
-      `&categories=business,politics` +
-      `&published_after=${daysAgo(2)}` +
-      `&exclude_domains=${encodeURIComponent(blacklist)}`
-    );
-    const d1 = await r1.json();
-    if (d1.data && d1.data.length >= 3) return res.status(200).json(d1);
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1500,
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        system: `You are an economic news analyst. Today is ${today}. Search the web and return ONLY a JSON array, no text before or after, no markdown fences. Start directly with [
+[{"title":"...","summary":"...","source":"Reuters/BBC/AP/etc","datetime":"22 Mar 14:30","impact":"high|medium|low","url":"https://...","body":"2-3 sentences of context in English."}]
+Return 4-5 articles, newest first. Only real articles from last 48 hours from quality sources like Reuters, AP, BBC, FT, CNBC, Guardian, Euronews.`,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
 
-    // Tier 2: same but last 5 days
-    const r2 = await fetch(
-      `https://api.thenewsapi.com/v1/news/all?api_token=${API_KEY}` +
-      `&search=${encodeURIComponent(q)}` +
-      `&language=en&limit=6&sort=published_at` +
-      `&categories=business,politics` +
-      `&published_after=${daysAgo(5)}` +
-      `&exclude_domains=${encodeURIComponent(blacklist)}`
-    );
-    const d2 = await r2.json();
-    if (d2.data && d2.data.length >= 2) return res.status(200).json(d2);
+    if (!response.ok) {
+      const e = await response.json();
+      return res.status(500).json({ error: e.error?.message || "Anthropic error" });
+    }
 
-    // Tier 3: simpler query, no categories, just blacklist
-    const simpleQ = {
-      geo:    "war oil gas energy Iran Russia sanctions",
-      energy: "natural gas LNG TTF Europe energy prices",
-      oil:    "crude oil OPEC Brent WTI prices barrel",
-      macro:  "ECB eurozone inflation interest rates economy",
-    };
-    const r3 = await fetch(
-      `https://api.thenewsapi.com/v1/news/all?api_token=${API_KEY}` +
-      `&search=${encodeURIComponent(simpleQ[category] || simpleQ.energy)}` +
-      `&language=en&limit=6&sort=published_at` +
-      `&published_after=${daysAgo(3)}` +
-      `&exclude_domains=${encodeURIComponent(blacklist)}`
-    );
-    const d3 = await r3.json();
-    return res.status(200).json(d3);
+    const data = await response.json();
+    const raw = (data.content || [])
+      .filter(b => b.type === "text")
+      .map(b => b.text)
+      .join("")
+      .trim();
+
+    // Parse JSON array from response
+    const a1 = raw.indexOf("[");
+    const a2 = raw.lastIndexOf("]");
+    if (a1 === -1 || a2 <= a1) {
+      return res.status(500).json({ error: "Invalid response format" });
+    }
+
+    let arr;
+    try {
+      arr = JSON.parse(raw.slice(a1, a2 + 1));
+    } catch {
+      const fixed = raw.slice(a1, a2 + 1).replace(/,(\s*[\]}])/g, "$1");
+      arr = JSON.parse(fixed);
+    }
+
+    return res.status(200).json({ data: arr, source: "claude" });
 
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
-}
-
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().split("T")[0];
 }
