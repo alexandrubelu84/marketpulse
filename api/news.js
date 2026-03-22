@@ -7,10 +7,10 @@ export default async function handler(req, res) {
   const API_KEY = process.env.NEWS_API_KEY;
 
   const searches = {
-    geo:    "oil gas energy attack sanction war Iran Russia Ukraine Hormuz pipeline Middle East",
-    energy: "natural gas LNG TTF energy Europe prices electricity",
-    oil:    "crude oil OPEC Brent WTI prices barrel production",
-    macro:  "ECB eurozone inflation interest rates economy Europe GDP",
+    geo:    "war sanctions Iran Russia Ukraine energy oil gas",
+    energy: "natural gas LNG TTF energy Europe prices",
+    oil:    "crude oil OPEC Brent WTI prices",
+    macro:  "ECB eurozone inflation interest rates economy",
   };
 
   // 29 trusted sources — no garbage
@@ -54,12 +54,12 @@ export default async function handler(req, res) {
   const q = searches[category] || searches.energy;
 
   try {
-    // First: trusted domains, last 2 days
+    // First: trusted domains, last 3 days
     const url1 = `https://api.thenewsapi.com/v1/news/all` +
       `?api_token=${API_KEY}` +
       `&search=${encodeURIComponent(q)}` +
       `&language=en&limit=6&sort=published_at` +
-      `&published_after=${getDateDaysAgo(2)}` +
+      `&published_after=${getDateDaysAgo(3)}` +
       `&domains=${encodeURIComponent(domains)}`;
 
     const r1 = await fetch(url1);
@@ -84,13 +84,16 @@ export default async function handler(req, res) {
       return res.status(200).json(d2);
     }
 
-    // Last resort: no domain filter, categories only, last 3 days
+    // Last resort: no domain filter, just language + category + date
     const url3 = `https://api.thenewsapi.com/v1/news/all` +
       `?api_token=${API_KEY}` +
       `&search=${encodeURIComponent(q)}` +
       `&language=en&limit=6&sort=published_at` +
-      `&categories=business,politics` +
-      `&published_after=${getDateDaysAgo(3)}`;
+      `&categories=business,politics,general` +
+      `&published_after=${getDateDaysAgo(5)}` +
+      `&exclude_domains=rt.com,sputniknews.com,tass.com,theduran.com,zerohedge.com,` +
+      `infowars.com,breitbart.com,naturalnews.com,globalresearch.ca,steynonline.com,` +
+      `zeenews.india.com,ndtv.com,hindustantimes.com,vox.com,dailymail.co.uk`;
 
     const r3 = await fetch(url3);
     const d3 = await r3.json();
