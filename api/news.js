@@ -7,22 +7,21 @@ export default async function handler(req, res) {
   const API_KEY = process.env.NEWS_API_KEY;
 
   const searches = {
-    geo:    "oil gas attack sanctions Russia Ukraine energy war",
-    energy: "natural gas LNG Europe energy TTF prices",
-    oil:    "oil OPEC crude Brent WTI barrel prices",
-    macro:  "ECB inflation eurozone interest rates economy",
+    geo:    "Iran war energy oil gas attack Ukraine Russia sanctions 2026",
+    energy: "natural gas TTF LNG Europe prices 2026",
+    oil:    "crude oil OPEC Brent WTI prices 2026",
+    macro:  "ECB interest rates inflation eurozone 2026",
   };
 
-  // Blocked sources
   const excludeDomains = [
-    "rt.com","sputniknews.com","tass.com",
-    "zeenews.india.com","ndtv.com","hindustantimes.com",
-    "vox.com","dailymail.co.uk","nypost.com","breitbart.com",
-    "infowars.com","naturalnews.com"
+    "theduran.com","zerohedge.com","steynonline.com","infowars.com",
+    "breitbart.com","naturalnews.com","rt.com","sputniknews.com",
+    "tass.com","globalresearch.ca","activistpost.com","thegatwaypundit.com",
+    "zeenews.india.com","ndtv.com","vox.com","justsecurity.org"
   ].join(",");
 
   const q = searches[category] || searches.energy;
-  const threeDaysAgo = getDateDaysAgo(3);
+  const twoDaysAgo = getDateDaysAgo(2);
 
   try {
     const url = `https://api.thenewsapi.com/v1/news/all` +
@@ -31,11 +30,20 @@ export default async function handler(req, res) {
       `&language=en` +
       `&limit=6` +
       `&sort=published_at` +
-      `&published_after=${threeDaysAgo}` +
+      `&published_after=${twoDaysAgo}` +
       `&exclude_domains=${encodeURIComponent(excludeDomains)}`;
 
     const response = await fetch(url);
     const data = await response.json();
+
+    // Filter out old articles client-side too
+    if (data.data) {
+      const twoDaysAgoMs = Date.now() - (2 * 24 * 60 * 60 * 1000);
+      data.data = data.data.filter(function(a) {
+        return new Date(a.published_at).getTime() > twoDaysAgoMs;
+      });
+    }
+
     return res.status(200).json(data);
   } catch (e) {
     return res.status(500).json({ error: e.message });
