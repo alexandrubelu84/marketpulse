@@ -1,18 +1,73 @@
-// Prices are fetched from TheNewsAPI search for financial data
-// Update manually or integrate with a financial API
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // Static prices — update these manually or connect to a financial API
-  // Source: tradingeconomics.com/commodities or finance.yahoo.com
-  const prices = [
-    { label: "WTI",        value: "68.28", unit: "USD/bbl", change: "+1.2%",  up: true  },
-    { label: "Brent",      value: "71.84", unit: "USD/bbl", change: "+1.1%",  up: true  },
-    { label: "TTF Gas",    value: "59.00", unit: "EUR/MWh", change: "+2.0%",  up: true  },
-    { label: "German Gas", value: "32.82", unit: "EUR/MWh", change: "+2.3%",  up: true  },
-    { label: "Carbon ETS", value: "58.30", unit: "EUR/t",   change: "-1.4%",  up: false },
+  // Yahoo Finance symbols
+  const symbols = {
+    "WTI":        "CL=F",
+    "Brent":      "BZ=F",
+    "TTF Gas":    "TTF=F",
+    "German Gas": "TTFDE=F",
+    "Carbon ETS": "EUGASEN.CO",
+  };
+
+  const units = {
+    "WTI":        "USD/bbl",
+    "Brent":      "USD/bbl",
+    "TTF Gas":    "EUR/MWh",
+    "German Gas": "EUR/MWh",
+    "Carbon ETS": "EUR/t",
+  };
+
+  // Fallback values if Yahoo Finance fails
+  const fallback = [
+    { label: "WTI",        value: "—", unit: "USD/bbl", change: "—", up: null },
+    { label: "Brent",      value: "—", unit: "USD/bbl", change: "—", up: null },
+    { label: "TTF Gas",    value: "—", unit: "EUR/MWh", change: "—", up: null },
+    { label: "German Gas", value: "—", unit: "EUR/MWh", change: "—", up: null },
+    { label: "Carbon ETS", value: "—", unit: "EUR/t",   change: "—", up: null },
   ];
 
-  return res.status(200).json({ prices });
+  try {
+    const tickers = Object.values(symbols).join(",");
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers)}&fields=regularMarketPrice,regularMarketChangePercent&corsDomain=finance.yahoo.com`;
+
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+      }
+    });
+
+    if (!response.ok) throw new Error("Yahoo Finance HTTP " + response.status);
+
+    const data = await response.json();
+    const quotes = data?.quoteResponse?.result || [];
+
+    if (quotes.length === 0) throw new Error("No quotes returned");
+
+    const prices = Object.entries(symbols).map(function([label, ticker]) {
+      const quote = quotes.find(function(q) { return q.symbol === ticker; });
+      if (!quote) return fallback.find(function(f) { return f.label === label; });
+
+      const price = quote.regularMarketPrice;
+      const changePct = quote.regularMarketChangePercent;
+      const up = changePct >= 0;
+      const changeStr = (up ? "+" : "") + changePct.toFixed(2) + "%";
+
+      return {
+        label,
+        value: price.toFixed(2),
+        unit: units[label],
+        change: changeStr,
+        up,
+      };
+    });
+
+    return res.status(200).json({ prices, source: "yahoo", updated: new Date().toISOString() });
+
+  } catch (e) {
+    console.warn("Yahoo Finance failed:", e.message, "— using fallback");
+    return res.status(200).json({ prices: fallback, source: "fallback", error: e.message });
+  }
 }
