@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     "flassbeck-economics.com","kingworldnews.com","argaam.com","fastcompany.com",
     "newser.com","suburbanfinance.com","seekingalpha.com","middleeastmonitor.com",
     // Other
-    "dailymail.co.uk","nypost.com","vox.com","washingtontimes.com",
+    "dailymail.co.uk","nypost.com","vox.com","washingtontimes.com","gatestoneinstitute.org","dissidentvoice.org","etftrends.com","global-macro-monitor.com","newser.com","suburbanfinance.com","theweek.com","spectator.co.uk","thenation.com","jacobin.com","moonofalabama.org","nakedcapitalism.com","wolfstreet.com","zerohedge.com","marketoracle.co.uk","oilprice.com",
   ].join(",");
 
   const q = searches[category] || searches.energy;
