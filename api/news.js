@@ -20,7 +20,9 @@ export default async function handler(req, res) {
     "timesofindia.com","indiatoday.intoday.in","livemint.com","rediff.com",
     "business-standard.com","moneycontrol.com","deccanchronicle.com",
     "opindia.com","swarajyamag.com","wionews.com","firstpost.com",
-    "theprint.in","scroll.in","telegraphindia.com",
+    "theprint.in","scroll.in","telegraphindia.com","thehindubusinessline.com","businesstoday.in",
+    "redstate.com","thegoodinvestors.sg","e.vnexpress.net","vnexpress.net",
+    "seekingalpha.com","middleeastmonitor.com","pambazuka.org","antiwar.com",
     // Far right / conspiracy / extremist
     "theduran.com","zerohedge.com","infowars.com","breitbart.com","naturalnews.com",
     "globalresearch.ca","steynonline.com","activistpost.com","newsmax.com",
