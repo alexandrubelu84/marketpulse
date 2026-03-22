@@ -75,16 +75,19 @@ async function fetchCategory(cat) {
   const articles = (data.data || []);
   if (articles.length === 0) throw new Error("No articles found");
   return articles.map(function(a) {
-    const d = new Date(a.published_at || Date.now());
-    const datetime = d.toLocaleDateString("ro-RO", { day:"numeric", month:"short", timeZone:"Europe/Bucharest" }) + " " + d.toLocaleTimeString("ro-RO", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Bucharest" });
+    // Claude web search returns datetime as string directly
+    const datetime = a.datetime || (function() {
+      const d = new Date(a.published_at || Date.now());
+      return d.toLocaleDateString("ro-RO", { day:"numeric", month:"short", timeZone:"Europe/Bucharest" }) + " " + d.toLocaleTimeString("ro-RO", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Bucharest" });
+    })();
     return {
       categoryId: cat.id,
       title: a.title || "",
-      summary: a.description || a.snippet || "",
+      summary: a.summary || a.description || a.snippet || "",
       source: a.source || "",
       datetime: datetime,
-      body: a.snippet || a.description || "",
-      impact: guessImpact(a.title),
+      body: a.body || a.summary || a.snippet || "",
+      impact: a.impact || guessImpact(a.title),
       link: a.url || null,
     };
   });
