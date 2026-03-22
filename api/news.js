@@ -18,21 +18,27 @@ export default async function handler(req, res) {
     // Indian sites
     "thehindu.com","ndtv.com","hindustantimes.com","economictimes.indiatimes.com",
     "timesofindia.com","indiatoday.intoday.in","livemint.com","rediff.com",
-    "business-standard.com","moneycontrol.com",
-    // Sports / lifestyle / irrelevant
-    "sportsnet.ca","insider.com","thedrive.com","menshealth.com","womenshealthmag.com",
-    "buzzfeed.com","huffpost.com","mashable.com","gizmodo.com","lifehacker.com",
-    // Far right / conspiracy
+    "business-standard.com","moneycontrol.com","deccanchronicle.com",
+    "opindia.com","swarajyamag.com","wionews.com","firstpost.com",
+    "theprint.in","scroll.in","telegraphindia.com",
+    // Far right / conspiracy / extremist
     "theduran.com","zerohedge.com","infowars.com","breitbart.com","naturalnews.com",
     "globalresearch.ca","steynonline.com","activistpost.com","newsmax.com",
     "westernjournal.com","theoccidentalobserver.net","theblaze.com","oann.com",
+    "gellerreport.com","juancole.com",
+    // Left wing activist
+    "truthout.org","commondreams.org","alternet.org","counterpunch.org",
+    // Regional irrelevant
+    "thedailyblog.co.nz","manilatimes.net","jamaicagleaner.com",
+    "winnipegfreepress.com","en.protothema.gr","thedrive.com",
+    // Sports / lifestyle
+    "sportsnet.ca","insider.com","menshealth.com","buzzfeed.com",
     // Finance clickbait
     "mottcapitalmanagement.com","uctoday.com","fortune.com","investing.com",
     "finance.yahoo.com","benzinga.com","fool.com","thestockmarketwatch.com",
-    "flassbeck-economics.com","kingworldnews.com",
-    // Other garbage
+    "flassbeck-economics.com","kingworldnews.com","argaam.com","fastcompany.com",
+    // Other
     "dailymail.co.uk","nypost.com","vox.com","jamaica-gleaner.com",
-    "winnipegfreepress.com","en.protothema.gr","argaam.com","fastcompany.com",
   ].join(",");
 
   const q = searches[category] || searches.energy;
