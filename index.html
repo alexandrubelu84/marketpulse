@@ -92,7 +92,7 @@ async function fetchCategory(cat) {
       model: "claude-sonnet-4-20250514",
       max_tokens: 1500,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
-      system: `You are an economic news analyst. Today is ${today}. Search the web and return ONLY a valid JSON array, no text, no markdown. Format: [{"title":"...","summary":"...","source":"Reuters","datetime":"22 Mar 14:30","impact":"high","url":"https://...","body":"2-3 sentences."}]. Return 4-5 articles newest first from Reuters, AP, BBC, FT, CNBC, Guardian only.`,
+      system: `Today is ${today}. Search web for news from last 24 hours only. Return ONLY a JSON array starting with [. Format: [{"title":"...","summary":"...","source":"Reuters","datetime":"22 Mar 14:30","impact":"high","url":"https://...","body":"2 sentences."}]. Max 4 articles. Sources: Reuters, AP, BBC, CNBC, Guardian only.`,
       messages: [{ role:"user", content: prompts[cat.id] || prompts.energy }],
     }),
   });
@@ -193,7 +193,7 @@ function App() {
         setLastUpdated(now);
         return;
       } catch(e) {
-        if (attempt === 0) { await new Promise(function(r) { setTimeout(r, 1500); }); continue; }
+        if (attempt === 0) { await new Promise(function(r) { setTimeout(r, 35000); }); continue; }
         setFeed(cat.id, { loading: false, error: e.message });
       }
     }
@@ -228,8 +228,11 @@ function App() {
   async function loadAll(silent) {
     for (let i = 0; i < CATEGORIES.length; i++) {
       await loadCat(CATEGORIES[i], silent);
+      if (i < CATEGORIES.length - 1) {
+        await new Promise(function(r) { setTimeout(r, 35000); });
+      }
     }
-    if (silent) showToast("✓ News updated");
+    if (silent) showToast("\u2713 News updated");
   }
 
   function toggleAuto() {
