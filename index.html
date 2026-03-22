@@ -66,10 +66,12 @@ async function fetchCategory(cat) {
   if (!ANTHROPIC_KEY) throw new Error("No Anthropic API key");
 
   const today = new Date().toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
+  const yd = new Date(); yd.setDate(yd.getDate()-1);
+  const yesterday = yd.toLocaleDateString("en-GB", { day:"numeric", month:"long", year:"numeric" });
 
   const prompts = {
-    energy: "Find 4 news articles from today or yesterday about: natural gas prices Europe TTF LNG, crude oil OPEC Brent WTI prices. Real articles only, last 24 hours.",
-    geo:    "Find 4 news articles from today or yesterday about: Iran war energy sanctions Russia Ukraine Middle East oil gas, ECB eurozone inflation economy. Real articles only, last 24 hours.",
+    energy: `Search the web RIGHT NOW for news published on ${today} or ${yesterday} about: natural gas TTF LNG Europe prices, crude oil OPEC Brent WTI. Return only articles with dates from ${today} or ${yesterday}. No older articles.`,
+    geo:    `Search the web RIGHT NOW for news published on ${today} or ${yesterday} about: Iran war energy Middle East oil gas sanctions Russia Ukraine, ECB eurozone inflation. Return only articles with dates from ${today} or ${yesterday}. No older articles.`,
   };
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -185,7 +187,7 @@ function App() {
         setLastUpdated(now);
         return;
       } catch(e) {
-        if (attempt === 0) { await new Promise(function(r) { setTimeout(r, 35000); }); continue; }
+        if (attempt === 0) { await new Promise(function(r) { setTimeout(r, 65000); }); continue; }
         setFeed(cat.id, { loading: false, error: e.message });
       }
     }
@@ -221,7 +223,7 @@ function App() {
     for (let i = 0; i < CATEGORIES.length; i++) {
       await loadCat(CATEGORIES[i], silent);
       if (i < CATEGORIES.length - 1) {
-        await new Promise(function(r) { setTimeout(r, 35000); });
+        await new Promise(function(r) { setTimeout(r, 65000); });
       }
     }
     if (silent) showToast("\u2713 News updated");
