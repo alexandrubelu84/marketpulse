@@ -90,9 +90,7 @@ async function fetchCategory(cat) {
 
 
 function App() {
-  const [prices, setPrices] = useState(PRICES_FALLBACK);
-  const [pricesAge, setPricesAge] = useState(null); // timestamp of last price fetch
-  const [pricesLoading, setPricesLoading] = useState(false);
+
   const [feeds, setFeeds] = useState(function() {
     return Object.fromEntries(CATEGORIES.map(function(c) {
       return [c.id, { items: [], loading: false, error: "" }];
@@ -158,30 +156,7 @@ function App() {
   }, []);
 
   // load all categories in parallel
-  // ── fetch prices from Vercel API ─────────────────────────────────────────
-  const fetchLivePrices = useCallback(async function() {
-    setPricesLoading(true);
-    try {
-      const res = await fetch("/api/prices");
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const data = await res.json();
-      if (data.prices && data.prices.length >= 3) {
-        setPrices(data.prices);
-        setPricesAge(Date.now());
-      }
-    } catch(e) {
-      console.warn("Price fetch failed:", e.message);
-    } finally {
-      setPricesLoading(false);
-    }
-  }, []);
 
-  // auto-refresh prices every 60 minutes
-  useEffect(function() {
-    fetchLivePrices();
-    const id = setInterval(fetchLivePrices, 60 * 60 * 1000);
-    return function() { clearInterval(id); };
-  }, [fetchLivePrices]);
 
   async function loadAll(silent) {
     for (let i = 0; i < CATEGORIES.length; i++) {
@@ -305,41 +280,27 @@ function App() {
         </div>
       )}
 
-      {/* Prices bar */}
+      {/* Prices bar - Yahoo Finance link */}
       <div style={{ background:"#0a0a14", borderBottom:"1px solid #1a1a28", position:"relative", zIndex:1 }}>
         <div style={{ maxWidth:960, margin:"0 auto", padding:"8px 24px",
-          display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-          {prices.map(function(p, i) {
-            return (
-              <div key={i} style={{ display:"flex", alignItems:"center", gap:6,
-                padding:"4px 12px", borderRadius:6, background:"#111120", border:"1px solid #1e1e2e" }}>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#e8e8f0", fontWeight:700 }}>{p.label}</span>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:"#ffffff", fontWeight:700 }}>{p.value}</span>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#e8e8f0" }}>{p.unit}</span>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, fontWeight:700,
-                  color: p.up ? "#4cf0a0" : "#ff5757" }}>{p.up ? "▲" : "▼"} {p.change}</span>
-              </div>
-            );
-          })}
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:10,
-            borderLeft:"1px solid #1e1e2e", paddingLeft:12 }}>
-            {pricesLoading && (
-              <div style={{ display:"flex", alignItems:"center", gap:5,
-                fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#4cf0a0" }}>
-                <div style={{ width:7, height:7, border:"1.5px solid #1e1e2e",
-                  borderTopColor:"#4cf0a0", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/>
-                updating...
-              </div>
-            )}
-            {pricesAge && !pricesLoading && (
-              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#9898b8" }}>
-                {new Date(pricesAge).toLocaleTimeString("ro-RO", {hour:"2-digit",minute:"2-digit"})}
-              </span>
-            )}
-            <a href="https://finance.yahoo.com/commodities" target="_blank" rel="noopener noreferrer"
-              style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10,
-                color:"#e8e8f0", textDecoration:"none", whiteSpace:"nowrap" }}>↗ Yahoo Finance</a>
+          display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+            {["WTI · Crude Oil","Brent · Crude","TTF · Nat Gas","Carbon ETS"].map(function(label, i) {
+              return (
+                <span key={i} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#3a3a5a" }}>
+                  {label}
+                </span>
+              );
+            })}
           </div>
+          <a href="https://finance.yahoo.com/commodities" target="_blank" rel="noopener noreferrer"
+            style={{ display:"flex", alignItems:"center", gap:6,
+              fontFamily:"'JetBrains Mono',monospace", fontSize:11, fontWeight:700,
+              color:"#e8c547", textDecoration:"none", whiteSpace:"nowrap",
+              border:"1px solid rgba(232,197,71,0.3)", borderRadius:6, padding:"4px 12px",
+              background:"rgba(232,197,71,0.05)" }}>
+            ↗ Vezi prețuri live · Yahoo Finance
+          </a>
         </div>
       </div>
 
