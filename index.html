@@ -1,49 +1,522 @@
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  if (req.method === "OPTIONS") return res.status(200).end();
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MarketPulse</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>body{margin:0;background:#080810}</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
 
-  const { category } = req.query;
-  const API_KEY = process.env.GNEWS_API_KEY;
-  if (!API_KEY) return res.status(500).json({ error: "GNEWS_API_KEY not set" });
 
-  const searches = {
-    geo:    "Iran war sanctions oil gas Middle East energy",
-    energy: "natural gas LNG TTF Europe energy prices",
-    oil:    "crude oil OPEC Brent WTI prices",
-    macro:  "ECB eurozone inflation interest rates economy",
-  };
 
-  const q = searches[category] || searches.energy;
+const REFRESH_SEC = 180;
 
-  try {
-    const url = `https://gnews.io/api/v4/search` +
-      `?q=${encodeURIComponent(q)}` +
-      `&lang=en` +
-      `&max=6` +
-      `&sortby=publishedAt` +
-      `&apikey=${API_KEY}`;
+// ── Prețuri manuale — actualizează după nevoie ────────────────────────────
+// Sursa: finance.yahoo.com/commodities sau tradingeconomics.com/commodities
+const PRICES_FALLBACK = [
+  { label: "WTI",        value: "—",  unit: "USD/bbl", change: "—", up: null },
+  { label: "Brent",      value: "—",  unit: "USD/bbl", change: "—", up: null },
+  { label: "TTF Gas",    value: "—",  unit: "EUR/MWh", change: "—", up: null },
+  { label: "German Gas", value: "—",  unit: "EUR/MWh", change: "—", up: null },
+  { label: "Carbon ETS", value: "—",  unit: "EUR/t",   change: "—", up: null },
+];
 
-    const r = await fetch(url);
-    const d = await r.json();
+const CATEGORIES = [
+  { id: "geo",    icon: "🎯", label: "Geopolitică",   color: "#ff4444", bg: "rgba(255,68,68,0.10)",  border: "rgba(255,68,68,0.25)" },
+  { id: "energy", icon: "🔥", label: "Gaz & Energie", color: "#ff8c00", bg: "rgba(255,140,0,0.12)",  border: "rgba(255,140,0,0.25)" },
+  { id: "oil",    icon: "🛢️", label: "Petrol & OPEC", color: "#e05cff", bg: "rgba(224,92,255,0.10)", border: "rgba(224,92,255,0.22)" },
+  { id: "macro",  icon: "📈", label: "Macro & BCE",   color: "#4c9fff", bg: "rgba(76,159,255,0.10)", border: "rgba(76,159,255,0.22)" },
+];
 
-    if (!d.articles) return res.status(500).json({ error: d.errors || "No articles" });
+const IMPACT_COLORS = {
+  high:   { bg: "rgba(255,87,87,0.15)",  color: "#ff5757" },
+  medium: { bg: "rgba(232,197,71,0.15)", color: "#e8c547" },
+  low:    { bg: "rgba(90,90,122,0.2)",   color: "#5a5a7a" },
+};
 
-    // Map GNews format to our format
-    const data = d.articles.map(function(a) {
-      return {
-        title: a.title,
-        description: a.description,
-        snippet: a.content,
-        source: a.source?.name || a.source?.url || "",
-        published_at: a.publishedAt,
-        url: a.url,
-      };
-    });
-
-    return res.status(200).json({ data, meta: { found: d.totalArticles, returned: data.length } });
-
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
-  }
+function guessImpact(t) {
+  const s = (t || "").toLowerCase();
+  if (/surge|crash|crisis|record|sanction|war|shock|spike|slump|hike|ban/.test(s)) return "high";
+  if (/rise|fall|drop|gain|increase|decrease|warn|expect|concern/.test(s)) return "medium";
+  return "low";
 }
+
+function safeParseJSON(raw) {
+  if (!raw) return null;
+  // find [ ... ] directly — most robust approach
+  const a1 = raw.indexOf("[");
+  const a2 = raw.lastIndexOf("]");
+  if (a1 === -1 || a2 <= a1) return null;
+  const arr = raw.slice(a1, a2 + 1);
+  try { return JSON.parse(arr); } catch(_) {}
+  // fix trailing commas
+  const fixed = arr.replace(/,[ \t\r\n]*([\]}])/g, "$1");
+  try { return JSON.parse(fixed); } catch(_) {}
+  return null;
+}
+
+// ── Single category fetch via TheNewsAPI ─────────────────────────────────
+async function fetchCategory(cat) {
+  const res = await fetch("/api/news?category=" + cat.id);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  const articles = (data.data || []);
+  if (articles.length === 0) throw new Error("No articles found");
+  return articles.map(function(a) {
+    const d = new Date(a.published_at || Date.now());
+    const datetime = d.toLocaleDateString("ro-RO", { day:"numeric", month:"short", timeZone:"Europe/Bucharest" }) + " " + d.toLocaleTimeString("ro-RO", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Bucharest" });
+    return {
+      categoryId: cat.id,
+      title: a.title || "",
+      summary: a.description || a.snippet || "",
+      source: a.source || "",
+      datetime: datetime,
+      body: a.snippet || a.description || "",
+      impact: guessImpact(a.title),
+      link: a.url || null,
+    };
+  });
+}
+
+// ── App ───────────────────────────────────────────────────────────────────
+
+
+function App() {
+
+  const [feeds, setFeeds] = useState(function() {
+    return Object.fromEntries(CATEGORIES.map(function(c) {
+      return [c.id, { items: [], loading: false, error: "" }];
+    }));
+  });
+  const [modal, setModal]         = useState(null);
+  const [clock, setClock]         = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [countdown, setCountdown] = useState(REFRESH_SEC);
+  const [toast, setToast]         = useState("");
+  const [filter, setFilter]       = useState("all");
+  const [lastUpdated, setLastUpdated] = useState("");
+
+  const autoRef      = useRef(false);
+  const countdownRef = useRef(REFRESH_SEC);
+
+  function showToast(msg) { setToast(msg); setTimeout(function() { setToast(""); }, 3000); }
+  function setFeed(id, patch) { setFeeds(function(f) { return Object.assign({}, f, { [id]: Object.assign({}, f[id], patch) }); }); }
+
+  // clock
+  useEffect(function() {
+    const id = setInterval(function() { setClock(new Date().toLocaleTimeString("ro-RO")); }, 1000);
+    return function() { clearInterval(id); };
+  }, []);
+
+  // ESC
+  useEffect(function() {
+    function h(e) { if (e.key === "Escape") setModal(null); }
+    window.addEventListener("keydown", h);
+    return function() { window.removeEventListener("keydown", h); };
+  }, []);
+
+  // countdown
+  useEffect(function() {
+    const id = setInterval(function() {
+      if (!autoRef.current) return;
+      countdownRef.current -= 1;
+      setCountdown(countdownRef.current);
+      if (countdownRef.current <= 0) {
+        countdownRef.current = REFRESH_SEC;
+        setCountdown(REFRESH_SEC);
+        loadAll(true);
+      }
+    }, 1000);
+    return function() { clearInterval(id); };
+  }, []);
+
+  // load one category
+  const loadCat = useCallback(async function(cat, silent) {
+    if (!silent) setFeed(cat.id, { loading: true, error: "" });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const items = await fetchCategory(cat);
+        const now = new Date().toLocaleTimeString("ro-RO");
+        setFeed(cat.id, { items, loading: false, error: "", lastUpdated: now });
+        setLastUpdated(now);
+        return;
+      } catch(e) {
+        if (attempt === 0) { await new Promise(function(r) { setTimeout(r, 1500); }); continue; }
+        setFeed(cat.id, { loading: false, error: e.message });
+      }
+    }
+  }, []);
+
+  // load all categories in parallel
+
+
+  async function loadAll(silent) {
+    for (let i = 0; i < CATEGORIES.length; i++) {
+      await loadCat(CATEGORIES[i], silent);
+
+    }
+    if (silent) showToast("\u2713 News updated");
+  }
+
+  function toggleAuto() {
+    const next = !autoRefresh;
+    setAutoRefresh(next);
+    autoRef.current = next;
+    countdownRef.current = REFRESH_SEC;
+    setCountdown(REFRESH_SEC);
+    showToast(next ? "▶ Auto-refresh activ" : "⏸ Auto-refresh oprit");
+  }
+
+  const anyLoading = CATEGORIES.some(function(c) { return feeds[c.id]?.loading; });
+  const allItems = CATEGORIES.flatMap(function(c) {
+    return (feeds[c.id]?.items || []).map(function(i) { return Object.assign({}, i, { _cat: c }); });
+  }).filter(function(i) { return filter === "all" || i.categoryId === filter; });
+
+  const r = 13, circ = 2 * Math.PI * r;
+  const dash = (countdown / REFRESH_SEC) * circ;
+  const mm = String(Math.floor(countdown / 60)).padStart(2, "0");
+  const ss = String(countdown % 60).padStart(2, "0");
+
+  return (
+    <div style={{ background: "#080810", color: "#e8e8f0", fontFamily: "'DM Sans',system-ui,sans-serif", minHeight: "100vh" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+      <style>{`
+        * { box-sizing:border-box; margin:0; padding:0; }
+        @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:0.35} }
+        @keyframes spin   { to{transform:rotate(360deg)} }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes slideUp{ from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes shimmer{ 0%{opacity:0.3} 100%{opacity:0.6} }
+        @keyframes toastIn{ from{opacity:0;transform:translate(-50%,12px)} to{opacity:1;transform:translate(-50%,0)} }
+        @keyframes modalIn{ from{opacity:0;transform:scale(0.97) translateY(-8px)} to{opacity:1;transform:scale(1) translateY(0)} }
+        .ni { transition: background 0.18s, border-color 0.18s, transform 0.18s; cursor:pointer; }
+        .ni:hover { background:#12121e!important; border-color:rgba(232,197,71,0.25)!important; transform:translateX(3px)!important; }
+        .ni:hover .arr { opacity:1!important; }
+        .chip:hover { border-color:#e8c547!important; color:#e8c547!important; background:rgba(232,197,71,0.05)!important; }
+        .btnY:hover:not(:disabled) { background:#f0d060!important; }
+        .btnO:hover:not(:disabled) { background:rgba(232,197,71,0.1)!important; }
+        .btnG:hover:not(:disabled) { background:rgba(76,240,160,0.1)!important; }
+        input:focus { border-color:#e8c547!important; outline:none; }
+        ::-webkit-scrollbar { width:4px; }
+        ::-webkit-scrollbar-track { background:#080810; }
+        ::-webkit-scrollbar-thumb { background:#252535; border-radius:2px; }
+      `}</style>
+
+      <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0,
+        backgroundImage:"linear-gradient(rgba(232,197,71,0.02) 1px,transparent 1px),linear-gradient(90deg,rgba(232,197,71,0.02) 1px,transparent 1px)",
+        backgroundSize:"44px 44px" }} />
+
+      {/* Toast */}
+      {toast && (
+        <div style={{ position:"fixed", bottom:24, left:"50%", zIndex:1000, whiteSpace:"nowrap",
+          background:"#14141e", border:"1px solid #2a2a3a", borderRadius:8, padding:"10px 22px",
+          fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:"#4cf0a0",
+          boxShadow:"0 8px 32px rgba(0,0,0,0.7)", animation:"toastIn 0.3s ease" }}>
+          {toast}
+        </div>
+      )}
+
+      {/* Modal */}
+      {modal && (
+        <div onClick={() => setModal(null)}
+          style={{ position:"fixed", inset:0, zIndex:900, background:"rgba(0,0,0,0.82)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            padding:24, backdropFilter:"blur(6px)", animation:"fadeIn 0.2s ease" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:"#0e0e18", border:`1px solid ${modal._cat.border}`,
+              borderRadius:16, maxWidth:660, width:"100%", maxHeight:"84vh",
+              display:"flex", flexDirection:"column",
+              boxShadow:`0 0 60px ${modal._cat.bg},0 32px 80px rgba(0,0,0,0.8)`,
+              animation:"modalIn 0.25s ease" }}>
+            <div style={{ padding:"16px 20px", borderBottom:"1px solid #1e1e2a",
+              display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:16 }}>{modal._cat.icon}</span>
+                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10,
+                  color:modal._cat.color, fontWeight:700, letterSpacing:1 }}>{modal._cat.label}</span>
+                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#9898b8" }}>
+                  {modal.source} · {modal.datetime}
+                </span>
+              </div>
+              <button onClick={() => setModal(null)}
+                style={{ background:"transparent", border:"1px solid #2a2a3a", borderRadius:6,
+                  color:"#9898b8", cursor:"pointer", padding:"4px 10px",
+                  fontFamily:"'JetBrains Mono',monospace", fontSize:11 }}>ESC ✕</button>
+            </div>
+            <div style={{ padding:26, overflowY:"auto", flex:1 }}>
+              {(() => { const imp = IMPACT_COLORS[modal.impact] || IMPACT_COLORS.low; return (
+                <span style={{ display:"inline-block", marginBottom:14, padding:"4px 12px",
+                  borderRadius:4, fontSize:11, fontWeight:700,
+                  fontFamily:"'JetBrains Mono',monospace", background:imp.bg, color:imp.color }}>
+                  IMPACT {(modal.impact||"low").toUpperCase()}
+                </span>
+              ); })()}
+              <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:22, lineHeight:1.4,
+                color:"#ececf8", marginBottom:16 }}>{modal.title}</div>
+              <p style={{ fontSize:14, lineHeight:1.85, color:"#8888a8", marginBottom:20 }}>{modal.summary}</p>
+              {modal.body && <>
+                <div style={{ height:1, background:"#1e1e2a", marginBottom:20 }} />
+                <p style={{ fontSize:14, lineHeight:1.95, color:"#c0c0de" }}>{modal.body}</p>
+              </>}
+              {modal.link && (
+                <a href={modal.link} target="_blank" rel="noopener noreferrer"
+                  style={{ display:"inline-flex", alignItems:"center", gap:8, marginTop:24,
+                    color:"#e8c547", border:"1px solid rgba(232,197,71,0.3)", borderRadius:8,
+                    padding:"10px 18px", fontFamily:"'JetBrains Mono',monospace",
+                    fontSize:12, fontWeight:700, textDecoration:"none" }}>
+                  ↗ CITEȘTE ARTICOLUL COMPLET
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prices bar - Yahoo Finance link */}
+      <div style={{ background:"#0a0a14", borderBottom:"1px solid #1a1a28", position:"relative", zIndex:1 }}>
+        <div style={{ maxWidth:960, margin:"0 auto", padding:"8px 24px",
+          display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+            {["WTI · Crude Oil","Brent · Crude","TTF · Nat Gas","Carbon ETS"].map(function(label, i) {
+              return (
+                <span key={i} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#3a3a5a" }}>
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+          <a href="https://finance.yahoo.com/commodities" target="_blank" rel="noopener noreferrer"
+            style={{ display:"flex", alignItems:"center", gap:6,
+              fontFamily:"'JetBrains Mono',monospace", fontSize:11, fontWeight:700,
+              color:"#e8c547", textDecoration:"none", whiteSpace:"nowrap",
+              border:"1px solid rgba(232,197,71,0.3)", borderRadius:6, padding:"4px 12px",
+              background:"rgba(232,197,71,0.05)" }}>
+            ↗ Vezi prețuri live · Yahoo Finance
+          </a>
+        </div>
+      </div>
+
+      {/* Header */}
+      <div style={{ background:"#0a0a12", borderBottom:"1px solid #1e1e2e", position:"relative", zIndex:1 }}>
+        <div style={{ maxWidth:960, margin:"0 auto", padding:"18px 24px",
+          display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+          <div>
+            <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:24, letterSpacing:-0.5 }}>
+              Market<span style={{ color:"#e8c547" }}>Pulse</span>
+            </div>
+            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#9898b8", marginTop:3, letterSpacing:1 }}>
+              NEWSFEED ECONOMIC · LIVE
+            </div>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+            {/* Countdown ring */}
+            {autoRefresh && (
+              <div style={{ display:"flex", alignItems:"center", gap:5,
+                fontFamily:"'JetBrains Mono',monospace", fontSize:11,
+                color: countdown < 30 ? "#e8c547" : "#9898b8" }}>
+                <svg width={30} height={30} style={{ transform:"rotate(-90deg)" }}>
+                  <circle cx={15} cy={15} r={r} fill="none" stroke="#1e1e2e" strokeWidth={2.5}/>
+                  <circle cx={15} cy={15} r={r} fill="none"
+                    stroke={countdown < 30 ? "#e8c547" : "#4cf0a0"} strokeWidth={2.5}
+                    strokeDasharray={dash + " " + circ} strokeLinecap="round"
+                    style={{ transition:"stroke-dasharray 1s linear" }}/>
+                </svg>
+                {mm}:{ss}
+              </div>
+            )}
+            <button className="btnG" onClick={toggleAuto}
+              style={{ background: autoRefresh ? "rgba(76,240,160,0.08)" : "transparent",
+                color: autoRefresh ? "#4cf0a0" : "#9898b8",
+                border:"1px solid " + (autoRefresh ? "rgba(76,240,160,0.3)" : "#2a2a3a"),
+                borderRadius:6, padding:"5px 12px", fontFamily:"'JetBrains Mono',monospace",
+                fontSize:11, fontWeight:700, cursor:"pointer" }}>
+              {autoRefresh ? "⏸ AUTO ON" : "▶ AUTO OFF"}
+            </button>
+            <button className="btnG" onClick={() => loadAll(false)} disabled={anyLoading}
+              style={{ background:"transparent", color:"#4cf0a0",
+                border:"1px solid rgba(76,240,160,0.25)", borderRadius:6, padding:"5px 12px",
+                fontFamily:"'JetBrains Mono',monospace", fontSize:11, fontWeight:700,
+                cursor:"pointer", opacity: anyLoading ? 0.5 : 1 }}>
+              {anyLoading ? "↻ ..." : "↻ REFRESH"}
+            </button>
+            <div style={{ display:"flex", alignItems:"center", gap:7,
+              fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:"#9898b8" }}>
+              <div style={{ width:7, height:7, borderRadius:"50%", background:"#4cf0a0",
+                boxShadow:"0 0 7px #4cf0a0", animation:"pulse 2s infinite" }}/>
+              {clock}
+            </div>
+
+          </div>
+        </div>
+
+        {/* Filter chips + per-cat loading indicators */}
+        <div style={{ maxWidth:960, margin:"0 auto", padding:"0 24px 14px",
+          display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+          {[{ id:"all", icon:"⚡", label:"Toate", color:"#e8c547", bg:"rgba(232,197,71,0.1)", border:"rgba(232,197,71,0.25)" },
+            ...CATEGORIES].map(function(c) {
+            const active = filter === c.id;
+            const loading = c.id !== "all" && feeds[c.id]?.loading;
+            return (
+              <button key={c.id} className="chip" onClick={() => setFilter(c.id)}
+                style={{ background: active ? c.bg : "transparent",
+                  color: active ? c.color : "#c8c8e0",
+                  border:"1px solid " + (active ? c.border : "#3a3a52"),
+                  borderRadius:20, padding:"5px 14px",
+                  fontFamily:"'JetBrains Mono',monospace", fontSize:11,
+                  fontWeight: active ? 700 : 400, cursor:"pointer",
+                  display:"flex", alignItems:"center", gap:6, transition:"all 0.18s" }}>
+                {loading
+                  ? <div style={{ width:8, height:8, border:"1.5px solid #1e1e2e",
+                      borderTopColor: c.color, borderRadius:"50%", animation:"spin 0.8s linear infinite" }}/>
+                  : <span>{c.icon}</span>}
+                {c.label}
+                {c.id !== "all" && (feeds[c.id]?.items?.length || 0) > 0 && (
+                  <span style={{ background: active ? c.border : "#1e1e2e",
+                    borderRadius:10, padding:"1px 6px", fontSize:9 }}>
+                    {feeds[c.id].items.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {lastUpdated && (
+            <span style={{ marginLeft:"auto", fontFamily:"'JetBrains Mono',monospace",
+              fontSize:10, color:"#9898b8" }}>
+              Actualizat {lastUpdated}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Feed */}
+      <div style={{ maxWidth:960, margin:"0 auto", padding:"24px 24px 60px", position:"relative", zIndex:1 }}>
+
+        {/* Empty state */}
+        {!anyLoading && allItems.length === 0 && Object.values(feeds).every(f => !f.error) && (
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
+            justifyContent:"center", padding:"80px 24px", gap:24 }}>
+            <div style={{ fontSize:52, opacity:0.2 }}>📡</div>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:22, color:"#e8e8f0", marginBottom:8 }}>
+                Newsfeed Economic
+              </div>
+              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:"#9898b8" }}>
+                Gaz & Energie · Petrol & OPEC · Macro & BCE
+              </div>
+            </div>
+            <button className="btnY" onClick={() => loadAll(false)}
+              style={{ background:"#e8c547", color:"#0a0a0f", border:"none", borderRadius:10,
+                padding:"14px 40px", fontFamily:"'JetBrains Mono',monospace",
+                fontSize:13, fontWeight:700, cursor:"pointer",
+                boxShadow:"0 0 30px rgba(232,197,71,0.2)", letterSpacing:1 }}>
+              ▶ ÎNCARCĂ ȘTIRILE
+            </button>
+          </div>
+        )}
+
+        {/* Skeletons */}
+        {anyLoading && allItems.length === 0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            {[0,1,2,3,4,5].map(function(i) {
+              return (
+                <div key={i} style={{ background:"#0e0e18", border:"1px solid #1a1a26",
+                  borderRadius:12, padding:"18px 20px",
+                  animation:"shimmer 1s ease " + (i*0.12) + "s infinite alternate" }}>
+                  <div style={{ height:10, background:"#1e1e2e", borderRadius:4, width:"28%", marginBottom:12 }}/>
+                  <div style={{ height:14, background:"#1e1e2e", borderRadius:4, width:"78%", marginBottom:8 }}/>
+                  <div style={{ height:12, background:"#1a1a26", borderRadius:4, width:"55%" }}/>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* News items */}
+        {allItems.length > 0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {allItems.map(function(item, i) {
+              const imp = IMPACT_COLORS[item.impact] || IMPACT_COLORS.low;
+              return (
+                <div key={item.categoryId + "-" + i} className="ni"
+                  onClick={() => setModal(item)}
+                  style={{ background:"#0d0d18", border:"1px solid #1a1a26",
+                    borderRadius:12, padding:"16px 20px", position:"relative", overflow:"hidden",
+                    animation:"slideUp 0.4s ease " + Math.min(i,10)*0.04 + "s both" }}>
+                  <div style={{ position:"absolute", left:0, top:0, bottom:0, width:3,
+                    background:item._cat.color, opacity:0.7, borderRadius:"3px 0 0 3px" }}/>
+                  <div style={{ paddingLeft:8 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap" }}>
+                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:9, fontWeight:700,
+                        color:item._cat.color, background:item._cat.bg,
+                        border:"1px solid "+item._cat.border, padding:"2px 8px", borderRadius:3, letterSpacing:0.5 }}>
+                        {item._cat.icon} {item._cat.label}
+                      </span>
+                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#9898b8" }}>
+                        {item.source}
+                      </span>
+                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#555570" }}>·</span>
+                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#9898b8" }}>
+                        {item.datetime}
+                      </span>
+                      <div style={{ flex:1 }}/>
+                      <span style={{ padding:"2px 9px", borderRadius:3, fontSize:9, fontWeight:700,
+                        fontFamily:"'JetBrains Mono',monospace", background:imp.bg, color:imp.color }}>
+                        {(item.impact||"low").toUpperCase()}
+                      </span>
+                    </div>
+                    <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:17, lineHeight:1.4,
+                      color:"#ffffff", marginBottom:7 }}>{item.title}</div>
+                    <div style={{ fontSize:13, lineHeight:1.65, color:"#c8c8e0" }}>{item.summary}</div>
+                    <div className="arr" style={{ position:"absolute", right:18, top:"50%",
+                      transform:"translateY(-50%)", color:"#3a3a5a", fontSize:18,
+                      opacity:0, transition:"opacity 0.2s" }}>↗</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Errors */}
+        {CATEGORIES.map(function(c) {
+          const err = feeds[c.id]?.error;
+          if (!err) return null;
+          return (
+            <div key={c.id} style={{ background:"rgba(255,87,87,0.06)",
+              border:"1px solid rgba(255,87,87,0.18)", borderRadius:8,
+              padding:"12px 16px", color:"#ff5757", fontSize:12,
+              fontFamily:"'JetBrains Mono',monospace", marginTop:10,
+              display:"flex", alignItems:"center", gap:12 }}>
+              <span>⚠ {c.icon} {c.label}: {err}</span>
+              <button onClick={() => loadCat(c, false)}
+                style={{ background:"transparent", border:"1px solid rgba(255,87,87,0.3)",
+                  borderRadius:4, color:"#ff5757", cursor:"pointer", padding:"2px 10px",
+                  fontFamily:"'JetBrains Mono',monospace", fontSize:11 }}>Retry</button>
+            </div>
+          );
+        })}
+
+        {/* Footer */}
+        {allItems.length > 0 && (
+          <div style={{ textAlign:"center", marginTop:28,
+            fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#2e2e4a" }}>
+            {allItems.length} articole
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>
