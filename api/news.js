@@ -8,13 +8,16 @@ export default async function handler(req, res) {
   if (!API_KEY) return res.status(500).json({ error: "GNEWS_API_KEY not set" });
 
   const searches = {
-    geo:    "Iran war sanctions oil gas Middle East energy",
+    geo:    "Iran war oil gas Middle East sanctions energy",
     energy: "natural gas LNG TTF Europe energy prices",
-    oil:    "crude oil OPEC Brent WTI prices",
+    oil:    "crude oil OPEC Brent WTI prices barrel",
     macro:  "ECB eurozone inflation interest rates economy",
   };
 
   const q = searches[category] || searches.energy;
+
+  // Last 48 hours
+  const from = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
   try {
     const url = `https://gnews.io/api/v4/search` +
@@ -22,20 +25,20 @@ export default async function handler(req, res) {
       `&lang=en` +
       `&max=6` +
       `&sortby=publishedAt` +
+      `&from=${from}` +
       `&apikey=${API_KEY}`;
 
     const r = await fetch(url);
     const d = await r.json();
 
-    if (!d.articles) return res.status(500).json({ error: d.errors || "No articles" });
+    if (!d.articles) return res.status(500).json({ error: d.errors?.[0] || "No articles" });
 
-    // Map GNews format to our format
     const data = d.articles.map(function(a) {
       return {
         title: a.title,
         description: a.description,
         snippet: a.content,
-        source: a.source?.name || a.source?.url || "",
+        source: a.source?.name || "",
         published_at: a.publishedAt,
         url: a.url,
       };
