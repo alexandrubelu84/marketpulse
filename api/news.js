@@ -1,52 +1,89 @@
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  if (req.method === "OPTIONS") return res.status(200).end();
-
-  const { category } = req.query;
-  const API_KEY = process.env.GNEWS_API_KEY;
-  if (!API_KEY) return res.status(500).json({ error: "GNEWS_API_KEY not set" });
-
-  const searches = {
-    geo:    "Iran war oil gas Middle East sanctions energy",
-    energy: "natural gas LNG TTF Europe energy prices",
-    oil:    "crude oil OPEC Brent WTI prices barrel",
-    macro:  "ECB eurozone inflation interest rates economy",
-  };
-
-  const q = searches[category] || searches.energy;
-
-  // Last 48 hours
-  const from = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-
   try {
-    const url = `https://gnews.io/api/v4/search` +
-      `?q=${encodeURIComponent(q)}` +
-      `&lang=en` +
-      `&max=6` +
-      `&sortby=publishedAt` +
-      `&from=${from}` +
-      `&apikey=${API_KEY}`;
+    const API_KEY = process.env.GNEWS_API_KEY;
 
-    const r = await fetch(url);
-    const d = await r.json();
+    if (!API_KEY) {
+      return res.status(500).json({ error: "Missing GNEWS_API_KEY" });
+    }
 
-    if (!d.articles) return res.status(500).json({ error: d.errors?.[0] || "No articles" });
+    const query = "(iran OR hormuz) AND (gas OR LNG OR refinery OR energy)";
 
-    const data = d.articles.map(function(a) {
-      return {
-        title: a.title,
-        description: a.description,
-        snippet: a.content,
-        source: a.source?.name || "",
-        published_at: a.publishedAt,
-        url: a.url,
-      };
-    });
+    const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(
+      query
+    )}&lang=en&max=20&apikey=${API_KEY}`;
 
-    return res.status(200).json({ data, meta: { found: d.totalArticles, returned: data.length } });
+    const response = await fetch(url);
 
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
+    const data = await response.json();
+
+    console.log("GNEWS RAW:", data);
+
+    if (!data.articles) {
+      return res.status(200).json({ articles: [] });
+    }
+
+    // 🔥 KEYWORDS
+    const keywords = [
+      "iran",
+      "hormuz",
+      "gas",
+      "lng",
+      "refinery",
+      "attack",
+      "strike",
+      "missile",
+      "energy",
+    ];
+
+    // 🔥 TRUSTED DOMAINS (soft, nu elimină complet)
+    const trustedDomains = [
+      "reuters",
+      "bloomberg",
+      "ft.com",
+      "wsj.com",
+      "apnews",
+      "bbc",
+      "cnbc",
+      "spglobal",
+      "platts",
+      "rte.ie",
+      "theguardian",
+    ];
+
+    const cleaned = data.articles
+      .map((a) => {
+        const title = (a.title || "").toLowerCase();
+        const domain = a.source?.name?.toLowerCase() || "";
+
+        let score = 0;
+
+        keywords.forEach((k) => {
+          if (title.includes(k)) score += 1;
+        });
+
+        const isTrusted = trustedDomains.some((d) =>
+          domain.includes(d)
+        );
+
+        if (isTrusted) score += 3;
+
+        return {
+          title: a.title,
+          url: a.url,
+          source: a.source?.name,
+          score,
+          trusted: isTrusted,
+          publishedAt: a.publishedAt,
+        };
+      })
+      // 🔥 NU mai eliminăm agresiv
+      .filter((a) => a.score >= 2)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    res.status(200).json({ articles: cleaned });
+  } catch (err) {
+    console.error("ERROR:", err);
+    res.status(500).json({ error: "Internal error" });
   }
 }
