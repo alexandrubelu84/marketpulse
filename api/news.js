@@ -6,8 +6,18 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Missing GNEWS_API_KEY" });
     }
 
-    const query = "(iran OR hormuz) AND (gas OR LNG OR refinery OR energy)";
+    let allArticles = [];
 
+for (const q of queries) {
+  const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(q)}&lang=en&max=10&apikey=${API_KEY}`;
+  
+  const response = await fetch(url);
+  const data = await response.json();
+
+  if (data.articles && data.articles.length > 0) {
+    allArticles = allArticles.concat(data.articles);
+  }
+}
     const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(
       query
     )}&lang=en&max=20&apikey=${API_KEY}`;
