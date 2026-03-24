@@ -64,8 +64,8 @@ export default async function handler(req, res) {
 
     const cfg = CATEGORY_CONFIG[category] || CATEGORY_CONFIG.geo;
 
-    // Surse bune / utile pentru tine
-    const ALLOWED_SOURCES = [
+    // Tier 1 = ce vrei sa vezi aproape mereu
+    const TIER1_SOURCES = [
       "reuters",
       "bloomberg",
       "bnn bloomberg",
@@ -75,41 +75,48 @@ export default async function handler(req, res) {
       "wall street journal",
       "wsj",
       "associated press",
-      "ap",
       "ap news",
       "bbc",
       "marketwatch",
       "yahoo finance",
       "spglobal",
       "s&p global",
-      "platts",
+      "platts"
+    ];
+
+    // Tier 2 = acceptabile doar daca nu ai destule din Tier 1
+    const TIER2_SOURCES = [
       "fortune",
       "the guardian",
       "financial post",
       "al jazeera",
       "abc news",
-      "abc17news.com",
       "fox business",
       "cna",
-      "outlook business",
       "investors business daily"
     ];
 
-    // Surse pe care vrei sa le omori
+    // Tot ce vrei sa omori
     const BLOCKED_SOURCES = [
-      "lokmat times",
-      "malayala manorama",
-      "free press journal",
+      "moneycontrol",
+      "outlook business",
+      "outlook india",
+      "indian express",
+      "the new indian express",
       "telegraph india",
-      "india tv news",
-      "ndtv",
-      "ndtv profit",
-      "news18",
       "times now",
       "times of india",
       "hindustan times",
       "india today",
+      "india tv news",
+      "ndtv",
+      "ndtv profit",
+      "news18",
       "firstpost",
+      "business standard",
+      "lokmat times",
+      "malayala manorama",
+      "free press journal",
       "daily mail",
       "daily mail online",
       "daily express",
@@ -120,15 +127,13 @@ export default async function handler(req, res) {
       "natural news",
       "huffpost",
       "manila times",
-      "business standard",
-      "the new indian express"
+      "ibt",
+      "international business times"
     ];
 
     const fetchJson = async (url) => {
       const response = await fetch(url, {
-        headers: {
-          "Accept": "application/json"
-        }
+        headers: { Accept: "application/json" }
       });
 
       if (!response.ok) {
@@ -138,6 +143,15 @@ export default async function handler(req, res) {
 
       return response.json();
     };
+
+    const normalize = (s) =>
+      String(s || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const inList = (source, arr) => arr.some((x) => source.includes(normalize(x)));
 
     let allArticles = [];
 
@@ -157,56 +171,48 @@ export default async function handler(req, res) {
       }
     }
 
-    // dedupe basic dupa URL
+    // dedupe dupa URL
     let unique = Array.from(
       new Map(allArticles.map((a) => [a.url, a])).values()
     );
 
-    const normalize = (s) =>
-      String(s || "")
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+    // dedupe si dupa titlu aproape identic
+    const seenTitleKeys = new Set();
+    unique = unique.filter((a) => {
+      const key = normalize(a.title).split(" ").slice(0, 9).join(" ");
+      if (!key) return false;
+      if (seenTitleKeys.has(key)) return false;
+      seenTitleKeys.add(key);
+      return true;
+    });
 
-    const getSource = (a) => normalize(a.source?.name || "");
-    const getTitle = (a) => String(a.title || "");
-    const getDesc = (a) => String(a.description || "");
-
-    const containsAny = (text, arr) => arr.some((x) => text.includes(normalize(x)));
-
-    const isAllowedSource = (source) =>
-      ALLOWED_SOURCES.some((s) => source.includes(normalize(s)));
-
-    const isBlockedSource = (source) =>
-      BLOCKED_SOURCES.some((s) => source.includes(normalize(s)));
-
-    const scoreArticle = (a) => {
-      const title = normalize(getTitle(a));
-      const desc = normalize(getDesc(a));
+    const scored = unique.map((a) => {
+      const title = normalize(a.title);
+      const desc = normalize(a.description);
       const text = `${title} ${desc}`;
-      const source = getSource(a);
+      const source = normalize(a.source?.name || "");
 
       let score = 0;
 
-      // source quality
-      if (isAllowedSource(source)) score += 10;
-      if (isBlockedSource(source)) score -= 20;
+      const isTier1 = inList(source, TIER1_SOURCES);
+      const isTier2 = inList(source, TIER2_SOURCES);
+      const isBlocked = inList(source, BLOCKED_SOURCES);
 
-      // category keywords
+      if (isTier1) score += 20;
+      if (isTier2) score += 8;
+      if (isBlocked) score -= 100;
+
       for (const k of cfg.keywords) {
         if (text.includes(normalize(k))) score += 2;
       }
 
-      // exact important triggers
-      if (text.includes("strait of hormuz")) score += 12;
-      if (text.includes("hormuz")) score += 6;
-      if (text.includes("lng")) score += 7;
-      if (text.includes("refinery")) score += 7;
+      if (text.includes("strait of hormuz")) score += 15;
+      if (text.includes("hormuz")) score += 8;
+      if (text.includes("lng")) score += 8;
+      if (text.includes("refinery")) score += 8;
       if (text.includes("pipeline")) score += 6;
       if (text.includes("terminal")) score += 5;
       if (text.includes("disruption")) score += 8;
-      if (text.includes("supply shock")) score += 9;
       if (text.includes("closure")) score += 8;
       if (text.includes("blockade")) score += 8;
       if (text.includes("shipping")) score += 4;
@@ -217,17 +223,16 @@ export default async function handler(req, res) {
       if (text.includes("missile")) score += 4;
       if (text.includes("war")) score += 3;
 
-      // category-specific boosts
       if (category === "energy") {
-        if (text.includes("gas")) score += 5;
+        if (text.includes("gas")) score += 6;
         if (text.includes("energy")) score += 3;
         if (text.includes("facility")) score += 3;
       }
 
       if (category === "oil") {
-        if (text.includes("oil")) score += 5;
+        if (text.includes("oil")) score += 6;
         if (text.includes("crude")) score += 5;
-        if (text.includes("brent")) score += 4;
+        if (text.includes("brent")) score += 5;
         if (text.includes("opec")) score += 4;
         if (text.includes("wti")) score += 3;
       }
@@ -246,37 +251,28 @@ export default async function handler(req, res) {
         if (text.includes("tehran")) score += 2;
       }
 
-      // penalizari pentru articole prea generale / slabe
-      if (title.includes("live updates")) score -= 6;
-      if (title.includes("live:")) score -= 6;
-      if (title.includes("watch")) score -= 5;
-      if (title.includes("video")) score -= 5;
-      if (title.includes("meme")) score -= 8;
-      if (text.includes("opinion")) score -= 5;
+      if (title.includes("live updates")) score -= 8;
+      if (title.includes("live:")) score -= 8;
+      if (title.includes("watch")) score -= 6;
+      if (title.includes("video")) score -= 6;
+      if (title.includes("meme")) score -= 10;
+      if (text.includes("opinion")) score -= 6;
 
-      return score;
-    };
-
-    const inferImpact = (a, score) => {
-      const text = normalize(`${getTitle(a)} ${getDesc(a)}`);
-
+      let impact = "low";
       if (
-        score >= 28 ||
+        score >= 35 ||
         text.includes("strait of hormuz") ||
-        text.includes("supply shock") ||
         text.includes("closure") ||
         text.includes("blockade") ||
         (text.includes("lng") && text.includes("attack")) ||
         (text.includes("refinery") && text.includes("attack"))
-      ) return "high";
+      ) {
+        impact = "high";
+      } else if (score >= 22) {
+        impact = "medium";
+      }
 
-      if (score >= 18) return "medium";
-      return "low";
-    };
-
-    const inferDirection = (a) => {
-      const text = normalize(`${getTitle(a)} ${getDesc(a)}`);
-
+      let direction = "NEUTRAL";
       if (
         text.includes("attack") ||
         text.includes("strike") ||
@@ -286,80 +282,62 @@ export default async function handler(req, res) {
         text.includes("blockade")
       ) {
         if (text.includes("oil") || text.includes("crude") || text.includes("brent")) {
-          return "BULLISH_OIL";
+          direction = "BULLISH_OIL";
+        } else if (text.includes("gas") || text.includes("lng")) {
+          direction = "BULLISH_GAS";
+        } else {
+          direction = "RISK_ON_ENERGY";
         }
-        if (text.includes("gas") || text.includes("lng")) {
-          return "BULLISH_GAS";
-        }
-        return "RISK_ON_ENERGY";
       }
-
       if (
-        text.includes("deal") ||
         text.includes("ceasefire") ||
+        text.includes("deal") ||
         text.includes("reopen") ||
         text.includes("talks")
       ) {
-        return "BEARISH_ENERGY";
+        direction = "BEARISH_ENERGY";
       }
 
-      return "NEUTRAL";
-    };
-
-    // dedupe mai bun pe titlu aproape identic
-    const seenKeys = new Set();
-    unique = unique.filter((a) => {
-      const key = normalize(getTitle(a)).split(" ").slice(0, 9).join(" ");
-      if (!key) return false;
-      if (seenKeys.has(key)) return false;
-      seenKeys.add(key);
-      return true;
+      return {
+        title: a.title,
+        description: a.description,
+        snippet: a.description,
+        source: a.source?.name || "",
+        url: a.url,
+        published_at: a.publishedAt,
+        score,
+        impact,
+        direction,
+        isTier1,
+        isTier2,
+        isBlocked
+      };
     });
 
-    let scored = unique
-      .map((a) => {
-        const source = getSource(a);
-        const score = scoreArticle(a);
-        const impact = inferImpact(a, score);
-        const direction = inferDirection(a);
-
-        return {
-          raw: a,
-          title: getTitle(a),
-          description: getDesc(a),
-          snippet: getDesc(a),
-          source: a.source?.name || "",
-          url: a.url,
-          published_at: a.publishedAt,
-          score,
-          impact,
-          direction,
-          allowed: isAllowedSource(source),
-          blocked: isBlockedSource(source)
-        };
-      })
-      .filter((a) => !a.blocked);
-
-    // prima trecere: doar allowed + scor bun
+    // 1) doar Tier 1
     let finalItems = scored
-      .filter((a) => a.allowed && a.score >= 12)
+      .filter((a) => !a.isBlocked)
+      .filter((a) => a.isTier1)
+      .filter((a) => a.score >= 18)
       .sort((a, b) => b.score - a.score);
 
-    // fallback: daca sunt prea putine, permite cateva non-blocked dar relevante
-    if (finalItems.length < 6) {
+    // 2) dacă sunt prea puține, adaugă Tier 2
+    if (finalItems.length < 4) {
       finalItems = scored
+        .filter((a) => !a.isBlocked)
+        .filter((a) => a.isTier1 || a.isTier2)
         .filter((a) => a.score >= 18)
         .sort((a, b) => b.score - a.score);
     }
 
-    // inca un fallback: daca tot sunt putine, prag mai mic
-    if (finalItems.length < 4) {
+    // 3) fallback final, dar tot fără blocked
+    if (finalItems.length < 3) {
       finalItems = scored
-        .filter((a) => a.score >= 12)
+        .filter((a) => !a.isBlocked)
+        .filter((a) => a.score >= 24)
         .sort((a, b) => b.score - a.score);
     }
 
-    // taie lungimea descrierii foarte mari
     finalItems = finalItems
       .map((a) => ({
         title: a.title,
