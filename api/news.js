@@ -5,16 +5,18 @@ export default async function handler(req, res) {
 
     const CATEGORY_QUERIES = {
       geo: [
-        '"Strait of Hormuz"',
-        'Iran missile strike',
-        'Iran attack Gulf',
-        'Iran shipping attack'
-      ],
+  '"Strait of Hormuz"',
+  'Iran AND (missile OR strike OR attack)',
+  'Iran AND (shipping OR tanker OR Gulf)',
+  '(US OR Israel) AND Iran AND (attack OR strike)',
+  'Middle East AND (tensions OR conflict) AND shipping'
+]
       energy: [
         '"Strait of Hormuz" gas',
         'Iran LNG supply',
         'gas supply disruption Middle East',
-        'refinery attack Iran'
+        'refinery attack Iran',
+	'gas fields attach'
       ],
       oil: [
         '"Strait of Hormuz" oil',
