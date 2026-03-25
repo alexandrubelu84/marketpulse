@@ -69,7 +69,7 @@ async function fetchCategory(cat) {
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   const articles = (data.data || []);
-  if (articles.length === 0) throw new Error("No articles found");
+  if (articles.length === 0) throw new Error("No high-impact news right now");
   return articles.map(function(a) {
     const d = new Date(a.published_at || Date.now());
     const datetime = d.toLocaleDateString("ro-RO", { day:"numeric", month:"short", timeZone:"Europe/Bucharest" }) + " " + d.toLocaleTimeString("ro-RO", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Bucharest" });
